@@ -83,7 +83,7 @@ python restyle_image.py
 To run on a single scene and style:
 ```
 python restyle_scene.py   \
- --scene_path demo/scene_transfer/bedroom/  \
+ --scene_path demo/scene_transfer/bedroom_0/  \
  --scene_type bedroom   \
  --style_path demo/design_styles/bedroom/pexels-itsterrymag-2631746
 ```
