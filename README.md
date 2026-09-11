@@ -135,6 +135,24 @@ If you encounter any issues or have questions, feel free to reach out: [Liyuan Z
 
 ## Batch CLI Pipeline (Adapted)
 
+
+```
+git clone git@github.com:PabloJM21/ReStyle3D.git
+
+module load gcc/12.3.0
+module load python/3.11.6
+
+python3.11 -m venv .venv
+source .venv/bin/activate
+
+pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 \
+    --extra-index-url https://download.pytorch.org/whl/cu121
+
+pip install wheel ninja
+pip install --no-build-isolation git+https://github.com/pesser/splatting
+pip install -r requirements.txt --no-deps
+```
+
 The script scripts/batch_canny_depth_control.py now runs a folder-to-folder batch pipeline by delegating each transfer to the same internal flow used by restyle_image.py.
 
 Example with one global style image:
