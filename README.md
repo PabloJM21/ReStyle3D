@@ -47,10 +47,6 @@ with multi-view consistency to achieve precise and coherent stylization.
 ### 📦 Repository
 ```
 git clone git@github.com:GradientSpaces/ReStyle3D.git
-cd ReStyle3D
-```
-
-### 💻 Installation 
 ```
 conda create -n restyle3d python=3.10
 conda activate restyle3d
@@ -83,31 +79,22 @@ python restyle_image.py
 To run on a single scene and style:
 ```
 python restyle_scene.py   \
- --scene_path demo/scene_transfer/bedroom_0/  \
  --scene_type bedroom   \
  --style_path demo/design_styles/bedroom/pexels-itsterrymag-2631746
-```
 
 ### 📂 Dataset: SceneTransfer
-We organize the data into two components:
 
 1. Interior Scenes:
-Multi-view real-world scans with aligned images, depth, and semantic segmentations.
 ```
 📁 data/
-  └── interiors/
       ├── bedroom/
       │   ├── 0/
-      │   │   ├── images/      # multi-view RGB images
       │   │   ├── depth/       # depth maps
       │   │   └── seg_dict/    # semantic segmentation dictionaries
-      │   └── 1/
       │       └── ...
       ├── living_room/
       └── kitchen/
 ```
-2. Design Styles:
-Style examplars with precomputed semantic segmentation.
 ```
 📁 data/
   └── design_styles/
@@ -145,3 +132,109 @@ If you encounter any issues or have questions, feel free to reach out: [Liyuan Z
 
 
 
+
+## Batch CLI Pipeline (Adapted)
+
+The script scripts/batch_canny_depth_control.py now runs a folder-to-folder batch pipeline by delegating each transfer to the same internal flow used by restyle_image.py.
+
+Example with one global style image:
+```
+python scripts/batch_canny_depth_control.py \
+  --prompt "modern interior with warm wood textures" \
+  --scale 2.0 \
+  --content_dir data/interiors/bedroom/0/images \
+  --format .jpg \
+  --output_dir output/batch_demo \
+  --style_image data/design_styles/bedroom/pexels-itsterrymag-2631746/image.jpg
+```
+
+Example with random style per input image:
+```
+python scripts/batch_canny_depth_control.py \
+  --prompt "modern interior with warm wood textures" \
+  --scale 2.0 \
+  --content_dir data/interiors/bedroom/0/images \
+  --format .jpg \
+  --output_dir output/batch_demo \
+  --style_dir data/design_styles/bedroom
+```
+
+Behavior:
+- The script iterates over all files in content_dir matching format.
+- It saves one stylized image per input file into output_dir using the same filename.
+- style_dir overrides style_image and randomly selects one style reference for each input image.
+- Required segmentation dictionaries are resolved automatically from common project layouts (seg_dict folders, sibling .pth files, or style folders with image.* plus seg_dict.pth).
+
+## Automatic Hugging Face Checkpoint Loading
+
+When the batch CLI starts, it automatically prefetches all Hugging Face checkpoints used by the ReStyle3D single-view transfer and refinement path.
+
+Prefetched repositories:
+1. runwayml/stable-diffusion-v1-5
+2. lllyasviel/sd-controlnet-depth
+3. diffusers/controlnet-depth-sdxl-1.0
+4. madebyollin/sdxl-vae-fp16-fix
+5. stabilityai/stable-diffusion-xl-base-1.0
+
+This ensures all required Hugging Face assets are in local cache before processing the first content image.
+
+## Detailed Workflow And Model Stack
+
+The adapted batch script executes this workflow for each input image:
+
+1. Input discovery
+- Collect all content images from content_dir matching format.
+- Resolve one style image (global style_image, random from style_dir, or self-style fallback).
+
+2. Semantic data resolution
+- Resolve structure segmentation dictionary for the content image.
+- Resolve style segmentation dictionary for the chosen style image.
+
+3. RunConfig assembly
+- Build scene_transfer.config.RunConfig with:
+  - prompt
+  - swap_guidance_scale (from scale)
+  - num_timesteps (steps)
+  - skip_steps
+  - load_latents
+  - domain_name
+
+4. Pipeline initialization and reuse
+- restyle_image.ModelManager is initialized once and reused across the loop.
+- It creates:
+  - transfer_pipe (SceneTransfer SD1.5 semantic transfer)
+  - refiner_pipe (SDXL ControlNet refiner)
+
+5. Latent and depth stage
+- restyle_image.run invokes scene_transfer.latent_utils.load_latents_or_invert_images.
+- If latents are cached, they are reused.
+- Otherwise, images are inverted and depth maps are estimated/loaded.
+
+6. Semantic transfer stage (SD1.5)
+- Uses SD1.5 plus depth ControlNet and semantic attention to transfer style while preserving scene structure.
+
+7. Refinement stage (SDXL)
+- The SDXL base model plus SDXL depth ControlNet and SDXL VAE refine low-resolution transfer into a high-resolution stylized output.
+
+8. Final write
+- The script writes the final stylized image to output_dir/<original_input_filename>.
+- Intermediate artifacts are stored under output_dir/_restyle3d_work for caching and debugging.
+
+## Where Checkpoints Are Loaded In Code
+
+- scene_transfer/model_utils.py
+  - get_scene_transfer_sd15:
+    - runwayml/stable-diffusion-v1-5
+    - lllyasviel/sd-controlnet-depth
+  - get_refining_pipe:
+    - stabilityai/stable-diffusion-xl-base-1.0
+    - diffusers/controlnet-depth-sdxl-1.0
+    - madebyollin/sdxl-vae-fp16-fix
+
+- restyle_image.py
+  - ModelManager initializes both transfer and refiner pipelines.
+  - run performs inversion, semantic matching, transfer, and refinement.
+
+Additional non-Hugging Face assets:
+- scripts/download_weights.sh downloads project-local weights such as Depth Anything V2 and DUSt3R checkpoints.
+- scene_transfer/depth_estimator.py expects checkpoints/depth_anything_v2_vitl.pth for the default depth estimator path.
