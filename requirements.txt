@@ -19,6 +19,8 @@ pyrallis==0.3.1
 jaxtyping==0.2.34
 opencv-python==4.10.0.84
 matplotlib==3.9.2
+regex==2023.10.3
+tokenizers==0.19.1
 
 # HuggingFace Hub + CLI + missing runtime dependencies
 huggingface_hub[cli]==0.26.2
@@ -32,7 +34,12 @@ charset-normalizer==3.3.2
 tqdm==4.66.4
 pyyaml==6.0.2
 
+# pyrallis missing runtime dependencies
+typing_inspect==0.9.0
+mypy_extensions==1.0.0
 
+# diffusers missing runtime dependency
+safetensors==0.4.3
 
 # Splatting (installed separately with --no-build-isolation)
 git+https://github.com/pesser/splatting
