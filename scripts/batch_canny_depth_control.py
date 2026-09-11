@@ -64,6 +64,47 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--prompt_strength",
+        type=float,
+        default=1.0,
+        help=(
+            "Direct classifier-free guidance scale for the transfer stage."
+        ),
+    )
+
+    parser.add_argument(
+        "--transfer_controlnet_guidance",
+        type=float,
+        default=1.0,
+        help=(
+            "Direct ControlNet conditioning scale for the transfer stage."
+        ),
+    )
+
+    parser.add_argument(
+        "--refiner_strength",
+        type=float,
+        default=0.2,
+        help=(
+            "Strength used by the SDXL refiner image-to-image stage (default: 0.2)."
+        ),
+    )
+
+    parser.add_argument(
+        "--refiner_controlnet_guidance",
+        type=float,
+        default=0.8,
+        help="Direct ControlNet conditioning scale for the SDXL refiner stage.",
+    )
+
+    parser.add_argument(
+        "--refiner_steps",
+        type=int,
+        default=100,
+        help="Direct number of denoising steps for the SDXL refiner stage.",
+    )
+
+    parser.add_argument(
         "-content_dir",
         "--content_dir",
         required=True,
@@ -106,10 +147,14 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--name",
+        "--style_sampling",
         type=str,
-        default="ReStyle3D",
-        help="Run name used for working directories.",
+        default="random",
+        choices=["random", "round_robin"],
+        help=(
+            "Sampling policy for --style_dir. "
+            "random picks a style at random per image; round_robin cycles deterministically."
+        ),
     )
 
     parser.add_argument(
@@ -141,27 +186,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--filtering",
-        type=parse_bool,
-        default=True,
-        help="Kept for CLI compatibility (not used by ReStyle3D pipeline).",
-    )
-
-    parser.add_argument(
-        "--filter_perc",
-        type=float,
-        default=0.25,
-        help="Kept for CLI compatibility (not used by ReStyle3D pipeline).",
-    )
-
-    parser.add_argument(
-        "--adain_class",
-        type=parse_bool,
-        default=False,
-        help="Kept for CLI compatibility (not used by ReStyle3D pipeline).",
-    )
-
-    parser.add_argument(
         "--domain_name",
         type=str,
         default="interior",
@@ -176,8 +200,20 @@ def parse_args() -> argparse.Namespace:
     if args.skip_steps < 0 or args.skip_steps >= args.steps:
         parser.error("--skip_steps must be >= 0 and < --steps.")
 
-    if not 0.0 <= args.filter_perc <= 1.0:
-        parser.error("--filter_perc must be in [0, 1].")
+    if args.prompt_strength < 0:
+        parser.error("--prompt_strength must be >= 0.")
+
+    if args.transfer_controlnet_guidance < 0:
+        parser.error("--transfer_controlnet_guidance must be >= 0.")
+
+    if args.refiner_strength < 0 or args.refiner_strength > 1:
+        parser.error("--refiner_strength must be in [0, 1].")
+
+    if args.refiner_controlnet_guidance < 0:
+        parser.error("--refiner_controlnet_guidance must be >= 0.")
+
+    if args.refiner_steps <= 0:
+        parser.error("--refiner_steps must be > 0.")
 
     if args.style_image is not None and not args.style_image.is_file():
         parser.error(f"Style image does not exist: {args.style_image}")
@@ -284,11 +320,16 @@ def make_cfg(
         load_latents=args.load_latents,
         skip_steps=args.skip_steps,
         swap_guidance_scale=args.scale,
+        controlnet_guidance=args.transfer_controlnet_guidance,
         use_masked_adain=False,
     )
     cfg.config_exp()
     cfg.struct_seg_dict = str(struct_seg)
     cfg.app_seg_dict = str(style_seg)
+    cfg.guidance_scale = args.prompt_strength
+    cfg.refiner_strength = args.refiner_strength
+    cfg.refiner_controlnet_guidance = args.refiner_controlnet_guidance
+    cfg.refiner_steps = args.refiner_steps
     return cfg
 
 
@@ -311,9 +352,6 @@ def main() -> None:
     input_files = collect_content_images(content_dir, image_format)
     style_refs = collect_style_images(args.style_dir) if args.style_dir is not None else None
 
-    if args.filtering is not True or args.filter_perc != 0.25 or args.adain_class:
-        print("Warning: --filtering, --filter_perc, and --adain_class are ignored by ReStyle3D batch wrapper.")
-
     if style_refs is not None:
         print(f"Using random style reference per image from: {args.style_dir}")
         print(f"Discovered {len(style_refs)} style reference(s) with segmentation dictionaries.")
@@ -324,6 +362,13 @@ def main() -> None:
 
     print(f"Found {len(input_files)} input file(s).")
     print(f"Output folder: {output_dir}")
+    print(
+        f"Influence controls: scale={args.scale}, prompt_strength={args.prompt_strength}, "
+        f"transfer_controlnet_guidance={args.transfer_controlnet_guidance}, "
+        f"refiner_strength={args.refiner_strength}, "
+        f"refiner_controlnet_guidance={args.refiner_controlnet_guidance}, "
+        f"refiner_steps={args.refiner_steps}"
+    )
 
     rng = random.Random(args.seed)
     pipelines: Optional[ModelManager] = None
@@ -333,7 +378,10 @@ def main() -> None:
         struct_seg = resolve_struct_seg_dict(input_path)
 
         if style_refs is not None:
-            style_path, style_seg = rng.choice(style_refs)
+            if args.style_sampling == "round_robin":
+                style_path, style_seg = style_refs[(index - 1) % len(style_refs)]
+            else:
+                style_path, style_seg = rng.choice(style_refs)
         else:
             style_path = args.style_image if args.style_image is not None else input_path
             style_seg = resolve_style_seg_dict(style_path)

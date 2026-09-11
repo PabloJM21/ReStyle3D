@@ -28,7 +28,6 @@ def get_refining_pipe(precision : torch.dtype = torch.float16) -> StableDiffusio
         use_safetensors=True,
         torch_dtype=precision,
     )
-    controlnet.enable_xformers_memory_efficient_attention()
     vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=precision)
     pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
         "stabilityai/stable-diffusion-xl-base-1.0",
@@ -40,6 +39,5 @@ def get_refining_pipe(precision : torch.dtype = torch.float16) -> StableDiffusio
     )
     pipe.to(device)
     pipe.enable_model_cpu_offload()
-    pipe.enable_xformers_memory_efficient_attention()
     
     return pipe

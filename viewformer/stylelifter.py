@@ -46,7 +46,6 @@ class StyleLifter:
             use_safetensors=True,
         )
         pipeline.to("cuda")
-        pipeline.enable_xformers_memory_efficient_attention()
         
         self.ViewTransformer = pipeline
 

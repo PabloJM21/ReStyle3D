@@ -238,3 +238,136 @@ The adapted batch script executes this workflow for each input image:
 Additional non-Hugging Face assets:
 - scripts/download_weights.sh downloads project-local weights such as Depth Anything V2 and DUSt3R checkpoints.
 - scene_transfer/depth_estimator.py expects checkpoints/depth_anything_v2_vitl.pth for the default depth estimator path.
+
+## Advanced Influence Controls (Prompt, Style, Structure)
+
+The batch CLI now exposes direct controls with no internal remapping.
+Each flag is passed directly to the parameter used by the pipeline:
+
+- --prompt_strength (float, default: 1.0)
+  - Directly sets guidance_scale in the transfer diffusion stage.
+
+- --scale (float, required)
+  - Directly sets swap_guidance_scale in the transfer diffusion stage.
+
+- --transfer_controlnet_guidance (float, default: 1.0)
+  - Directly sets controlnet_conditioning_scale in the transfer stage.
+
+- --refiner_strength (float in [0,1], default: 0.2)
+  - Directly sets SDXL refiner image-to-image strength.
+
+- --refiner_controlnet_guidance (float, default: 0.8)
+  - Directly sets controlnet_conditioning_scale in the SDXL refiner stage.
+
+- --refiner_steps (int, default: 100)
+  - Directly sets num_inference_steps in the SDXL refiner stage.
+
+- --style_sampling (random|round_robin, default: random)
+  - Used only when --style_dir is provided.
+  - random: choose a random style reference per input image.
+  - round_robin: deterministic cyclic style assignment.
+
+
+### Practical Presets
+
+Prioritize structure (stable geometry, mild style):
+- --prompt_strength 0.9
+- --scale 1.2
+- --transfer_controlnet_guidance 1.5
+- --refiner_strength 0.12
+- --refiner_controlnet_guidance 1.0
+- --refiner_steps 80
+
+Balanced transfer (recommended starting point):
+- --prompt_strength 1.0
+- --scale 2.0
+- --transfer_controlnet_guidance 1.0
+- --refiner_strength 0.2
+- --refiner_controlnet_guidance 0.8
+- --refiner_steps 100
+
+Prioritize style (strong appearance shift):
+- --prompt_strength 1.2
+- --scale 2.5
+- --transfer_controlnet_guidance 0.7
+- --refiner_strength 0.3
+- --refiner_controlnet_guidance 0.6
+- --refiner_steps 120
+
+Prioritize prompt semantics over style image:
+- Increase --prompt_strength (1.2 to 1.6)
+- Keep --scale moderate (1.5 to 2.2)
+- Keep --transfer_controlnet_guidance moderate to high (0.9 to 1.3)
+
+CLI examples for each priority:
+
+Structure-priority (strong geometry preservation):
+```
+python scripts/batch_canny_depth_control.py \
+  --prompt "cozy Scandinavian bedroom, natural light" \
+  --scale 1.2 \
+  --prompt_strength 0.9 \
+  --transfer_controlnet_guidance 1.5 \
+  --refiner_strength 0.12 \
+  --refiner_controlnet_guidance 1.0 \
+  --refiner_steps 80 \
+  --content_dir data/interiors/bedroom/0/images \
+  --format .jpg \
+  --output_dir output/priority_structure \
+  --style_image data/design_styles/bedroom/pexels-itsterrymag-2631746/image.jpg
+```
+
+Balanced (recommended baseline):
+```
+python scripts/batch_canny_depth_control.py \
+  --prompt "modern interior with warm wood textures" \
+  --scale 2.0 \
+  --prompt_strength 1.0 \
+  --transfer_controlnet_guidance 1.0 \
+  --refiner_strength 0.2 \
+  --refiner_controlnet_guidance 0.8 \
+  --refiner_steps 100 \
+  --content_dir data/interiors/bedroom/0/images \
+  --format .jpg \
+  --output_dir output/priority_balanced \
+  --style_image data/design_styles/bedroom/pexels-itsterrymag-2631746/image.jpg
+```
+
+Style-priority (maximum appearance transfer):
+```
+python scripts/batch_canny_depth_control.py \
+  --prompt "luxury interior with rich textures" \
+  --scale 2.5 \
+  --prompt_strength 1.2 \
+  --transfer_controlnet_guidance 0.7 \
+  --refiner_strength 0.3 \
+  --refiner_controlnet_guidance 0.6 \
+  --refiner_steps 120 \
+  --content_dir data/interiors/bedroom/0/images \
+  --format .jpg \
+  --output_dir output/priority_style \
+  --style_dir data/design_styles/bedroom \
+  --style_sampling random
+```
+
+Prompt-priority (prompt semantics emphasized over style):
+```
+python scripts/batch_canny_depth_control.py \
+  --prompt "minimalist Japanese-style interior, clean lines, neutral palette" \
+  --scale 1.8 \
+  --prompt_strength 1.5 \
+  --transfer_controlnet_guidance 1.2 \
+  --refiner_strength 0.18 \
+  --refiner_controlnet_guidance 0.85 \
+  --refiner_steps 100 \
+  --content_dir data/interiors/bedroom/0/images \
+  --format .jpg \
+  --output_dir output/priority_prompt \
+  --style_dir data/design_styles/bedroom \
+  --style_sampling round_robin
+```
+
+Notes:
+- If outputs drift from structure, decrease scale and refiner_strength, and/or increase transfer_controlnet_guidance.
+- If outputs are too conservative, increase scale and prompt_strength first, then decrease transfer_controlnet_guidance.
+- Use style_sampling=round_robin for reproducible style assignment across runs.

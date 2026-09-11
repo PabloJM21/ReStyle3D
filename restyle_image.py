@@ -139,11 +139,12 @@ def run_appearance_transfer(
     # Run diffusion with semantic attention
     logger.info(f"Starting diffusion process with {cfg.num_timesteps} steps...")
     generator = torch.Generator('cuda').manual_seed(cfg.seed)
+    guidance_scale = float(getattr(cfg, "guidance_scale", 1.0))
     images = model.pipe(
         prompt=[cfg.prompt] * 3,
         image=depths,
         latents=init_latents,
-        guidance_scale=1.,
+        guidance_scale=guidance_scale,
         num_inference_steps=cfg.num_timesteps,
         swap_guidance_scale=cfg.swap_guidance_scale,
         callback=model.get_adain_callback(),
@@ -159,6 +160,9 @@ def run_appearance_transfer(
     logger.info("Starting refinement stage...")
     lowres_img = images[0] 
     refine_generator = torch.manual_seed(0)
+    refiner_strength = float(getattr(cfg, "refiner_strength", 0.2))
+    refiner_controlnet = float(getattr(cfg, "refiner_controlnet_guidance", 0.8))
+    refiner_steps = int(getattr(cfg, "refiner_steps", 100))
     
     highres_img = refiner_pipe(
         prompt=["a photo of " + cfg.domain_name],
@@ -168,11 +172,11 @@ def run_appearance_transfer(
         generator=refine_generator,
         width=1024, 
         height=1024,
-        num_inference_steps=100,
+        num_inference_steps=refiner_steps,
         target_size=(1024, 1024),
         negative_target_size=(512, 512),
-        strength=0.2,
-        controlnet_conditioning_scale=0.8
+        strength=refiner_strength,
+        controlnet_conditioning_scale=refiner_controlnet
     ).images[0]
     
     # Save outputs
