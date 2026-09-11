@@ -20,9 +20,14 @@ jaxtyping==0.2.34
 opencv-python==4.10.0.84
 matplotlib==3.9.2
 
-# HuggingFace Hub + CLI + runtime HTTP dependency
+# HuggingFace Hub + CLI + runtime HTTP dependencies
 huggingface_hub[cli]==0.26.2
 requests==2.32.3
+urllib3==2.2.2
+idna==3.7
+certifi==2024.8.30
+charset-normalizer==3.3.2
+
 
 # Splatting (installed separately with --no-build-isolation)
 git+https://github.com/pesser/splatting
